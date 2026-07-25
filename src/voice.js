@@ -68,11 +68,26 @@ async function connectSide(group, channelId) {
     channelId: channel.id,
     guildId: channel.guild.id,
     adapterCreator: channel.guild.voiceAdapterCreator,
+    // Namespace by bot user ID so two bots in the SAME guild (one per process)
+    // don't collide on the default per-guild connection slot.
+    group: client.user.id,
     selfDeaf: false, // must NOT be deaf, or we can't receive audio
     selfMute: false, // must NOT be muted, or we can't play relayed audio
   });
 
-  await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
+  connection.on('stateChange', (oldS, newS) => {
+    console.log(`[${group}] voice ${oldS.status} -> ${newS.status}`);
+  });
+  connection.on('error', (err) => {
+    console.error(`[${group}] voice connection error:`, err.message);
+  });
+
+  try {
+    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+  } catch (err) {
+    connection.destroy();
+    throw err;
+  }
 
   const player = side.player ?? makePlayer();
   connection.subscribe(player);
