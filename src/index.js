@@ -1,62 +1,45 @@
 import 'dotenv/config';
-import { Client, GatewayIntentBits, Partials, Events } from 'discord.js';
-import { isLeader, getGroupOfChannel, getRelayTargets } from './config.js';
+import { Client, GatewayIntentBits, Events } from 'discord.js';
+import { generateDependencyReport } from '@discordjs/voice';
 import { handleCommand } from './commands.js';
-import { relayToChannel } from './relay.js';
+import { registerClients } from './voice.js';
 
-const token = process.env.DISCORD_TOKEN;
-if (!token) {
-  console.error('Missing DISCORD_TOKEN. Copy .env.example to .env and fill it in.');
+const tokenA = process.env.DISCORD_TOKEN_A;
+const tokenB = process.env.DISCORD_TOKEN_B;
+
+if (!tokenA || !tokenB) {
+  console.error(
+    'Missing DISCORD_TOKEN_A and/or DISCORD_TOKEN_B.\n' +
+      'You need TWO bot applications (both invited to the server) because a bot\n' +
+      'can only be in one voice channel per server. Copy .env.example to .env.',
+  );
   process.exit(1);
 }
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // privileged — enable it in the Dev Portal
-  ],
-  partials: [Partials.Channel],
-});
+// GuildVoiceStates is required to join/receive voice. No message intents needed.
+const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates];
 
-client.once(Events.ClientReady, (c) => {
-  console.log(`✅ shortcaller is online as ${c.user.tag}`);
-});
+const botA = new Client({ intents }); // sits in Group A's room, handles commands
+const botB = new Client({ intents }); // sits in Group B's room
 
-client.on(Events.InteractionCreate, async (interaction) => {
+registerClients({ botA, botB });
+
+botA.once(Events.ClientReady, (c) => console.log(`✅ Bot A online as ${c.user.tag} (Group A)`));
+botB.once(Events.ClientReady, (c) => console.log(`✅ Bot B online as ${c.user.tag} (Group B)`));
+
+// Only Bot A handles slash commands, to keep a single source of truth.
+botA.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   try {
     await handleCommand(interaction);
   } catch (err) {
     console.error('Command error:', err);
-    if (interaction.isRepliable() && !interaction.replied) {
-      await interaction.reply({ content: '⚠️ Something went wrong.', ephemeral: true }).catch(() => {});
-    }
+    const msg = { content: '⚠️ Something went wrong.', ephemeral: true };
+    if (interaction.deferred) await interaction.editReply(msg).catch(() => {});
+    else if (!interaction.replied) await interaction.reply(msg).catch(() => {});
   }
 });
 
-client.on(Events.MessageCreate, async (message) => {
-  // Ignore bots/webhooks (including our own relayed copies) to prevent loops.
-  if (message.author.bot || message.webhookId) return;
-  if (!message.guild) return;
+console.log(generateDependencyReport());
 
-  // Only relay leaders speaking in a channel that belongs to a group.
-  if (!isLeader(message.author.id)) return;
-  if (!getGroupOfChannel(message.channelId)) return;
-
-  const targetIds = getRelayTargets(message.channelId);
-  await Promise.all(
-    targetIds.map(async (channelId) => {
-      try {
-        const channel = await client.channels.fetch(channelId);
-        if (channel?.isTextBased()) {
-          await relayToChannel(channel, message);
-        }
-      } catch (err) {
-        console.error(`Failed to relay to channel ${channelId}:`, err.message);
-      }
-    }),
-  );
-});
-
-client.login(token);
+await Promise.all([botA.login(tokenA), botB.login(tokenB)]);

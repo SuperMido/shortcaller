@@ -2,12 +2,13 @@ import 'dotenv/config';
 import { REST, Routes } from 'discord.js';
 import { commandData } from './commands.js';
 
-const token = process.env.DISCORD_TOKEN;
-const clientId = process.env.DISCORD_CLIENT_ID;
+// Slash commands live on Bot A only.
+const token = process.env.DISCORD_TOKEN_A;
+const clientId = process.env.DISCORD_CLIENT_ID_A;
 const guildId = process.env.DISCORD_GUILD_ID;
 
 if (!token || !clientId) {
-  console.error('Missing DISCORD_TOKEN or DISCORD_CLIENT_ID in .env');
+  console.error('Missing DISCORD_TOKEN_A or DISCORD_CLIENT_ID_A in .env');
   process.exit(1);
 }
 

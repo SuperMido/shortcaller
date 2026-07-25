@@ -2,14 +2,16 @@ import {
   SlashCommandBuilder,
   PermissionFlagsBits,
   MessageFlags,
+  ChannelType,
 } from 'discord.js';
 import {
   getConfig,
-  linkChannel,
-  unlinkChannel,
+  setVoiceChannel,
   addLeader,
   removeLeader,
+  getVoiceChannelId,
 } from './config.js';
+import { joinAll, leaveAll, getState } from './voice.js';
 
 // All commands are restricted to members with the "Manage Server" permission.
 const adminOnly = (builder) =>
@@ -18,28 +20,40 @@ const adminOnly = (builder) =>
 export const commandData = [
   adminOnly(
     new SlashCommandBuilder()
-      .setName('link')
-      .setDescription('Add this channel to a relay group (A or B).')
+      .setName('setroom')
+      .setDescription('Set a group\'s voice channel.')
       .addStringOption((o) =>
         o
           .setName('group')
-          .setDescription('Which group this channel belongs to')
+          .setDescription('Which group')
           .setRequired(true)
           .addChoices(
             { name: 'Group A', value: 'A' },
             { name: 'Group B', value: 'B' },
           ),
+      )
+      .addChannelOption((o) =>
+        o
+          .setName('channel')
+          .setDescription('The voice channel for this group')
+          .addChannelTypes(ChannelType.GuildVoice)
+          .setRequired(true),
       ),
   ),
   adminOnly(
     new SlashCommandBuilder()
-      .setName('unlink')
-      .setDescription('Remove this channel from its relay group.'),
+      .setName('join')
+      .setDescription('Make both bots join their rooms and start relaying voice.'),
+  ),
+  adminOnly(
+    new SlashCommandBuilder()
+      .setName('leave')
+      .setDescription('Make both bots leave and stop relaying.'),
   ),
   adminOnly(
     new SlashCommandBuilder()
       .setName('addleader')
-      .setDescription('Add a user whose messages get relayed.')
+      .setDescription('Add a user whose voice gets relayed.')
       .addUserOption((o) =>
         o.setName('user').setDescription('The leader to add').setRequired(true),
       ),
@@ -47,7 +61,7 @@ export const commandData = [
   adminOnly(
     new SlashCommandBuilder()
       .setName('removeleader')
-      .setDescription('Stop relaying a user\'s messages.')
+      .setDescription('Stop relaying a user\'s voice.')
       .addUserOption((o) =>
         o.setName('user').setDescription('The leader to remove').setRequired(true),
       ),
@@ -55,7 +69,7 @@ export const commandData = [
   adminOnly(
     new SlashCommandBuilder()
       .setName('status')
-      .setDescription('Show the current leaders and each group\'s channels.'),
+      .setDescription('Show leaders, rooms, and connection state.'),
   ),
 ].map((b) => b.toJSON());
 
@@ -64,33 +78,30 @@ export async function handleCommand(interaction) {
     interaction.reply({ content, flags: MessageFlags.Ephemeral });
 
   switch (interaction.commandName) {
-    case 'link': {
+    case 'setroom': {
       const group = interaction.options.getString('group', true);
-      const { added, movedFrom } = linkChannel(interaction.channelId, group);
-      if (!added) {
-        return reply(`ℹ️ This channel is already in **Group ${group}**.`);
-      }
-      if (movedFrom) {
-        return reply(
-          `✅ Moved this channel from **Group ${movedFrom}** to **Group ${group}**.`,
-        );
-      }
-      return reply(`✅ This channel is now in **Group ${group}**.`);
+      const channel = interaction.options.getChannel('channel', true);
+      setVoiceChannel(group, channel.id);
+      return reply(`✅ **Group ${group}** voice channel set to <#${channel.id}>.`);
     }
-    case 'unlink': {
-      const removedFrom = unlinkChannel(interaction.channelId);
-      return reply(
-        removedFrom
-          ? `✅ Removed this channel from **Group ${removedFrom}**.`
-          : 'ℹ️ This channel was not in any group.',
-      );
+    case 'join': {
+      if (!getVoiceChannelId('A') && !getVoiceChannelId('B')) {
+        return reply('⚠️ No rooms set yet. Use `/setroom` for Group A and Group B first.');
+      }
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const summary = await joinAll();
+      return interaction.editReply(summary);
+    }
+    case 'leave': {
+      leaveAll();
+      return reply('👋 Both bots left the voice channels. Relay stopped.');
     }
     case 'addleader': {
       const user = interaction.options.getUser('user', true);
       const added = addLeader(user.id);
       return reply(
         added
-          ? `✅ <@${user.id}> is now a leader — their messages will be relayed.`
+          ? `✅ <@${user.id}> is now a leader — their voice will be relayed.`
           : `ℹ️ <@${user.id}> is already a leader.`,
       );
     }
@@ -108,13 +119,11 @@ export async function handleCommand(interaction) {
       const leaders = cfg.leaders.length
         ? cfg.leaders.map((id) => `<@${id}>`).join(', ')
         : '_none_';
-      const fmt = (ids) =>
-        ids.length ? ids.map((id) => `<#${id}>`).join(', ') : '_none_';
-      return reply(
-        `**Leaders:** ${leaders}\n` +
-          `**Group A:** ${fmt(cfg.groups.A)}\n` +
-          `**Group B:** ${fmt(cfg.groups.B)}`,
-      );
+      const lines = getState().map((s) => {
+        const room = s.channelId ? `<#${s.channelId}>` : '_not set_';
+        return `**Group ${s.group}:** ${room} — ${s.status}`;
+      });
+      return reply(`**Leaders:** ${leaders}\n${lines.join('\n')}`);
     }
     default:
       return reply('Unknown command.');

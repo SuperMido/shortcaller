@@ -8,13 +8,13 @@ const CONFIG_PATH = join(__dirname, '..', 'config.json');
 export const GROUPS = ['A', 'B'];
 
 const DEFAULT_CONFIG = {
-  // Discord user IDs whose messages get relayed (P1, P3, ...).
+  // Discord user IDs whose voice gets relayed (P1, P3, ...).
   leaders: [],
-  // The two relay groups. A leader's message in a Group A channel is reposted
-  // to every Group B channel, and vice versa.
+  // Each group is one voice channel. Bot A sits in Group A's channel,
+  // Bot B in Group B's channel. Audio is relayed A <-> B.
   groups: {
-    A: [], // channel IDs in Group A
-    B: [], // channel IDs in Group B
+    A: { voiceChannelId: null },
+    B: { voiceChannelId: null },
   },
 };
 
@@ -28,7 +28,10 @@ function load() {
       cache = {
         ...DEFAULT_CONFIG,
         ...raw,
-        groups: { ...DEFAULT_CONFIG.groups, ...(raw.groups ?? {}) },
+        groups: {
+          A: { ...DEFAULT_CONFIG.groups.A, ...(raw.groups?.A ?? {}) },
+          B: { ...DEFAULT_CONFIG.groups.B, ...(raw.groups?.B ?? {}) },
+        },
       };
     } catch (err) {
       console.error('Failed to parse config.json, starting from defaults:', err.message);
@@ -52,21 +55,19 @@ export function isLeader(userId) {
   return load().leaders.includes(userId);
 }
 
-/** Returns 'A', 'B', or null for the group a channel belongs to. */
-export function getGroupOfChannel(channelId) {
-  const cfg = load();
-  for (const group of GROUPS) {
-    if (cfg.groups[group].includes(channelId)) return group;
-  }
-  return null;
+export function getVoiceChannelId(group) {
+  return load().groups[group]?.voiceChannelId ?? null;
 }
 
-/** Channels in the *other* group, i.e. where a message from this channel is relayed. */
-export function getRelayTargets(fromChannelId) {
-  const group = getGroupOfChannel(fromChannelId);
-  if (!group) return [];
-  const otherGroup = group === 'A' ? 'B' : 'A';
-  return [...load().groups[otherGroup]];
+export function setVoiceChannel(group, channelId) {
+  const cfg = load();
+  cfg.groups[group].voiceChannelId = channelId;
+  save();
+}
+
+/** The group whose bot should relay TO (the opposite side). */
+export function otherGroup(group) {
+  return group === 'A' ? 'B' : 'A';
 }
 
 export function addLeader(userId) {
@@ -84,34 +85,4 @@ export function removeLeader(userId) {
   cfg.leaders.splice(idx, 1);
   save();
   return true;
-}
-
-/**
- * Add a channel to a group. Removes it from the other group first if needed
- * (a channel belongs to exactly one group).
- * Returns { added, movedFrom } — movedFrom is the previous group or null.
- */
-export function linkChannel(channelId, group) {
-  const cfg = load();
-  const current = getGroupOfChannel(channelId);
-  if (current === group) return { added: false, movedFrom: null };
-
-  if (current) {
-    const arr = cfg.groups[current];
-    arr.splice(arr.indexOf(channelId), 1);
-  }
-  cfg.groups[group].push(channelId);
-  save();
-  return { added: true, movedFrom: current };
-}
-
-/** Remove a channel from whichever group it's in. Returns the group, or null. */
-export function unlinkChannel(channelId) {
-  const cfg = load();
-  const current = getGroupOfChannel(channelId);
-  if (!current) return null;
-  const arr = cfg.groups[current];
-  arr.splice(arr.indexOf(channelId), 1);
-  save();
-  return current;
 }
