@@ -13,9 +13,10 @@ import {
 } from './config.js';
 import { joinAll, leaveAll, getState } from './voice.js';
 
-// All commands are restricted to members with the "Manage Server" permission.
-const adminOnly = (builder) =>
-  builder.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
+// Commands are visible to everyone for now. To restrict them to members with
+// the "Manage Server" permission again, use:
+//   builder.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+const adminOnly = (builder) => builder;
 
 export const commandData = [
   adminOnly(
@@ -28,8 +29,8 @@ export const commandData = [
           .setDescription('Which group')
           .setRequired(true)
           .addChoices(
-            { name: 'Group A', value: 'A' },
-            { name: 'Group B', value: 'B' },
+            { name: 'Attack', value: 'attack' },
+            { name: 'Defence', value: 'defence' },
           ),
       )
       .addChannelOption((o) =>
@@ -82,11 +83,11 @@ export async function handleCommand(interaction) {
       const group = interaction.options.getString('group', true);
       const channel = interaction.options.getChannel('channel', true);
       setVoiceChannel(group, channel.id);
-      return reply(`✅ **Group ${group}** voice channel set to <#${channel.id}>.`);
+      return reply(`✅ **${group}** voice channel set to <#${channel.id}>.`);
     }
     case 'join': {
-      if (!getVoiceChannelId('A') && !getVoiceChannelId('B')) {
-        return reply('⚠️ No rooms set yet. Use `/setroom` for Group A and Group B first.');
+      if (!getVoiceChannelId('attack') && !getVoiceChannelId('defence')) {
+        return reply('⚠️ No rooms set yet. Use `/setroom` for attack and defence first.');
       }
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const summary = await joinAll();
@@ -121,7 +122,7 @@ export async function handleCommand(interaction) {
         : '_none_';
       const lines = getState().map((s) => {
         const room = s.channelId ? `<#${s.channelId}>` : '_not set_';
-        return `**Group ${s.group}:** ${room} — ${s.status}`;
+        return `**${s.group}:** ${room} — ${s.status}`;
       });
       return reply(`**Leaders:** ${leaders}\n${lines.join('\n')}`);
     }

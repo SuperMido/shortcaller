@@ -10,19 +10,19 @@ import {
   getVoiceConnection,
 } from '@discordjs/voice';
 import prism from 'prism-media';
-import { isLeader, getVoiceChannelId, otherGroup } from './config.js';
+import { isLeader, getVoiceChannelId, otherGroup, GROUPS } from './config.js';
 
 // One "side" per group: the bot client for it, its live voice connection,
 // and the audio player that speaks the OTHER side's relayed audio into it.
 const sides = {
-  A: { client: null, connection: null, player: null },
-  B: { client: null, connection: null, player: null },
+  attack: { client: null, connection: null, player: null },
+  defence: { client: null, connection: null, player: null },
 };
 
 /** Register the two bot clients. Call once at startup. */
 export function registerClients({ botA, botB }) {
-  sides.A.client = botA;
-  sides.B.client = botB;
+  sides.attack.client = botA; // Bot A -> attack room
+  sides.defence.client = botB; // Bot B -> defence room
 }
 
 function makePlayer() {
@@ -37,23 +37,22 @@ function makePlayer() {
  */
 export async function joinAll() {
   const results = [];
-  for (const group of ['A', 'B']) {
+  for (const group of GROUPS) {
     const channelId = getVoiceChannelId(group);
     if (!channelId) {
-      results.push(`Group ${group}: no voice channel set (use /setroom).`);
+      results.push(`${group}: no voice channel set (use /setroom).`);
       continue;
     }
     try {
       await connectSide(group, channelId);
-      results.push(`Group ${group}: connected. ✅`);
+      results.push(`${group}: connected. ✅`);
     } catch (err) {
-      console.error(`Group ${group} join failed:`, err);
-      results.push(`Group ${group}: failed to join — ${err.message}`);
+      console.error(`${group} join failed:`, err);
+      results.push(`${group}: failed to join — ${err.message}`);
     }
   }
   // Wire receivers only after both connections exist so relay targets are ready.
-  wireRelay('A');
-  wireRelay('B');
+  for (const group of GROUPS) wireRelay(group);
   return results.join('\n');
 }
 
@@ -136,7 +135,7 @@ function relayUtterance(receiver, userId, targetPlayer, group) {
 
 /** Disconnect both bots and stop relaying. */
 export function leaveAll() {
-  for (const group of ['A', 'B']) {
+  for (const group of GROUPS) {
     const side = sides[group];
     const channelId = getVoiceChannelId(group);
     // Destroy any live connection for this bot's guild.
@@ -153,7 +152,7 @@ export function leaveAll() {
 }
 
 export function getState() {
-  return ['A', 'B'].map((group) => {
+  return GROUPS.map((group) => {
     const side = sides[group];
     const status = side.connection?.state?.status ?? 'not connected';
     return { group, channelId: getVoiceChannelId(group), status };

@@ -5,16 +5,16 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, '..', 'config.json');
 
-export const GROUPS = ['A', 'B'];
+export const GROUPS = ['attack', 'defence'];
 
 const DEFAULT_CONFIG = {
   // Discord user IDs whose voice gets relayed (P1, P3, ...).
   leaders: [],
-  // Each group is one voice channel. Bot A sits in Group A's channel,
-  // Bot B in Group B's channel. Audio is relayed A <-> B.
+  // Each group is one voice channel. Bot A sits in the attack channel,
+  // Bot B in the defence channel. Audio is relayed attack <-> defence.
   groups: {
-    A: { voiceChannelId: null },
-    B: { voiceChannelId: null },
+    attack: { voiceChannelId: null },
+    defence: { voiceChannelId: null },
   },
 };
 
@@ -29,8 +29,8 @@ function load() {
         ...DEFAULT_CONFIG,
         ...raw,
         groups: {
-          A: { ...DEFAULT_CONFIG.groups.A, ...(raw.groups?.A ?? {}) },
-          B: { ...DEFAULT_CONFIG.groups.B, ...(raw.groups?.B ?? {}) },
+          attack: { ...DEFAULT_CONFIG.groups.attack, ...(raw.groups?.attack ?? {}) },
+          defence: { ...DEFAULT_CONFIG.groups.defence, ...(raw.groups?.defence ?? {}) },
         },
       };
     } catch (err) {
@@ -67,7 +67,7 @@ export function setVoiceChannel(group, channelId) {
 
 /** The group whose bot should relay TO (the opposite side). */
 export function otherGroup(group) {
-  return group === 'A' ? 'B' : 'A';
+  return group === 'attack' ? 'defence' : 'attack';
 }
 
 export function addLeader(userId) {
